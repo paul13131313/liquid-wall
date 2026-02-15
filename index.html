@@ -647,31 +647,32 @@ function drawFluid() {
 function drawPersonWithGlow(maskData, maskW, maskH) {
   const preset = PRESETS[currentPreset];
 
-  // Draw camera to temp (mirrored)
-  tempCtx.save();
-  tempCtx.translate(canvasW, 0);
-  tempCtx.scale(-1, 1);
+  // Draw camera to temp (no mirror — natural orientation for video calls)
   tempCtx.drawImage(video, 0, 0, canvasW, canvasH);
-  tempCtx.restore();
 
-  // Create mask image data at canvas resolution
-  const maskImgData = maskCtx.createImageData(canvasW, canvasH);
-  const md = maskImgData.data;
-  const scaleX = maskW / canvasW;
-  const scaleY = maskH / canvasH;
-
-  for (let y = 0; y < canvasH; y++) {
-    for (let x = 0; x < canvasW; x++) {
-      const mx = Math.floor(x * scaleX);
-      const my = Math.floor(y * scaleY);
-      const mIdx = my * maskW + mx;
-      const val = maskData[mIdx] > 128 ? 255 : 0;
-      const pi = (y * canvasW + x) * 4;
-      md[pi] = md[pi + 1] = md[pi + 2] = val;
-      md[pi + 3] = val;
-    }
+  // Create soft mask using drawImage scaling + blur for smooth edges
+  // First draw raw mask data to a small temporary canvas
+  const rawMaskCanvas = document.createElement('canvas');
+  rawMaskCanvas.width = maskW;
+  rawMaskCanvas.height = maskH;
+  const rawMaskCtx = rawMaskCanvas.getContext('2d');
+  const rawImgData = rawMaskCtx.createImageData(maskW, maskH);
+  const rd = rawImgData.data;
+  for (let i = 0; i < maskW * maskH; i++) {
+    const v = maskData[i];
+    const pi = i * 4;
+    rd[pi] = rd[pi + 1] = rd[pi + 2] = 255;
+    rd[pi + 3] = v;
   }
-  maskCtx.putImageData(maskImgData, 0, 0);
+  rawMaskCtx.putImageData(rawImgData, 0, 0);
+
+  // Scale up with smoothing + blur for feathered edges
+  maskCtx.clearRect(0, 0, canvasW, canvasH);
+  maskCtx.filter = 'blur(4px)';
+  maskCtx.imageSmoothingEnabled = true;
+  maskCtx.imageSmoothingQuality = 'high';
+  maskCtx.drawImage(rawMaskCanvas, 0, 0, canvasW, canvasH);
+  maskCtx.filter = 'none';
 
   // Cut person from camera using mask
   tempCtx.globalCompositeOperation = 'destination-in';
@@ -769,12 +770,8 @@ function renderLoop(timestamp) {
     tempCtx.clearRect(0, 0, canvasW, canvasH);
     drawPersonWithGlow(maskData, maskW, maskH);
   } else {
-    // No mask yet — show mirrored camera
-    ctx.save();
-    ctx.translate(canvasW, 0);
-    ctx.scale(-1, 1);
+    // No mask yet — show camera
     ctx.drawImage(video, 0, 0, canvasW, canvasH);
-    ctx.restore();
   }
 }
 
@@ -869,11 +866,7 @@ function legacyRenderLoop(timestamp) {
     tempCtx.clearRect(0, 0, canvasW, canvasH);
     drawPersonWithGlow(legacyMaskData, legacyMaskW, legacyMaskH);
   } else {
-    ctx.save();
-    ctx.translate(canvasW, 0);
-    ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, canvasW, canvasH);
-    ctx.restore();
   }
 }
 
